@@ -150,6 +150,36 @@ body {
   display: none; z-index: 10;
 }
 .zoom-indicator.visible { display: block; }
+
+.detail-panel { flex-shrink: 0; max-height: 240px; overflow-y: auto; }
+.detail-content { padding: 8px 12px; font-size: 12px; line-height: 1.6; }
+.detail-row { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+.detail-row .label { color: #888; min-width: 52px; flex-shrink: 0; }
+.detail-row .value { color: #e0e0e0; word-break: break-all; flex: 1; }
+.detail-row .value input {
+  background: #0d0d1a; border: 1px solid #0f3460; color: #e0e0e0; padding: 2px 6px;
+  border-radius: 3px; font-size: 12px; font-family: inherit; width: 100%; box-sizing: border-box;
+}
+.detail-row .value input:focus { outline: none; border-color: #e94560; }
+.color-swatch {
+  display: inline-block; width: 16px; height: 16px; border-radius: 3px;
+  vertical-align: middle; border: 1px solid rgba(255,255,255,0.2); margin-right: 4px;
+}
+.detail-preview-text {
+  background: #0d0d1a; border: 1px solid #0f3460; border-radius: 4px;
+  padding: 12px; margin-top: 8px; min-height: 30px;
+  white-space: pre-wrap; word-break: break-all; overflow-x: auto;
+}
+.analyze-loading {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 20px; color: #888; font-size: 13px;
+}
+.analyze-loading .spinner {
+  width: 16px; height: 16px; border: 2px solid #0f3460;
+  border-top-color: #e94560; border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.analyze-error { color: #ff6b6b; padding: 12px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -168,6 +198,12 @@ body {
     <button class="tool-btn" data-tool="ai_click" id="aiBtn" disabled title="AI分割: 需要启动SAM服务">
       AI 分割 <span class="badge" id="aiBadge">离线</span>
     </button>
+  </div>
+  <div class="tool-group">
+    <button class="action-btn" id="aiAnalyzeBtn" disabled title="使用 Qwen-VL 一键分析图片，自动识别所有区域">
+      🤖 AI 分析
+    </button>
+    <span id="aiStatus" style="font-size:11px;color:#888;margin-left:4px;">离线</span>
   </div>
   <div class="separator"></div>
   <div class="tool-group">
@@ -224,6 +260,13 @@ body {
       <button class="view-btn" id="viewRegionBtn" disabled title="聚焦到选中区域">聚焦</button>
     </div>
     <div class="region-list" id="regionList"></div>
+    <div id="detailPanel" class="detail-panel" style="display:none">
+      <div class="panel-header" style="border-top:1px solid #0f3460;">
+        <span>AI 识别详情</span>
+        <span class="count" id="detailType"></span>
+      </div>
+      <div class="detail-content" id="detailContent"></div>
+    </div>
   </div>
 </div>
 
@@ -288,6 +331,10 @@ const state = {
   nextId: 1,
   zoomFitScale: 1,  // cached scale for "100%" reference
   exportCounter: 1,  // 导出文件编号计数器
+  ollamaAvailable: false,
+  ollamaUrl: 'http://localhost:5680',
+  isAnalyzing: false,
+  selectedAiPreview: null,  // {text, font, fontSize, color} for canvas preview
 };
 
 // ===== DOM refs =====
@@ -312,6 +359,11 @@ const statusSize = document.getElementById('statusSize');
 const statusMsg = document.getElementById('statusMsg');
 const zoomIndicator = document.getElementById('zoomIndicator');
 const preTypeSelect = document.getElementById('preTypeSelect');
+const aiAnalyzeBtn = document.getElementById('aiAnalyzeBtn');
+const aiStatus = document.getElementById('aiStatus');
+const detailPanel = document.getElementById('detailPanel');
+const detailContent = document.getElementById('detailContent');
+const detailType = document.getElementById('detailType');
 
 function genId() { return 'r' + String(state.nextId++).padStart(3, '0'); }
 function msg(text) { statusMsg.textContent = text; setTimeout(() => { if (statusMsg.textContent === text) statusMsg.textContent = ''; }, 4000); }
@@ -426,6 +478,55 @@ function render() {
     ctx.restore();
   }
 
+  // Draw selected AI region text preview on canvas
+  if (state.selectedAiPreview && state.selectedRegionId) {
+    const sel = state.regions.find(r => r.id === state.selectedRegionId);
+    if (sel && sel.ai_processed) {
+      const bbox = sel.annotation.bbox;
+      const preview = state.selectedAiPreview;
+      const tl = imageToCanvas(bbox[0], bbox[1]);
+      const br = imageToCanvas(bbox[0] + bbox[2], bbox[1] + bbox[3]);
+      const cw = br.x - tl.x;
+      const ch = br.y - tl.y;
+
+      ctx.save();
+      // Semi-transparent overlay background
+      ctx.fillStyle = 'rgba(22,33,62,0.6)';
+      ctx.fillRect(tl.x - 2, tl.y - 2, cw + 4, ch + 4);
+
+      // Render text preview
+      if (preview.text) {
+        // Scale font size to canvas
+        const canvasFontSize = Math.max(8, Math.min(ch * 0.7, cw / preview.text.length * 2));
+        ctx.font = canvasFontSize + 'px ' + preview.font + ', "Microsoft YaHei", "PingFang SC", sans-serif';
+        ctx.fillStyle = preview.color || '#ffffff';
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';
+
+        // Word wrap
+        const words = preview.text.split('');
+        let line = '';
+        let lineY = tl.y + 4;
+        const maxW = cw - 8;
+        for (const ch of words) {
+          const testLine = line + ch;
+          if (ctx.measureText(testLine).width > maxW && line) {
+            ctx.fillText(line, tl.x + 4, lineY);
+            line = ch;
+            lineY += canvasFontSize * 1.3;
+            if (lineY > br.y - 4) break;
+          } else {
+            line = testLine;
+          }
+        }
+        if (line) {
+          ctx.fillText(line, tl.x + 4, lineY);
+        }
+      }
+      ctx.restore();
+    }
+  }
+
   updateZoomIndicator();
 }
 
@@ -535,6 +636,8 @@ function deleteRegion(id) {
   }
   updateUI();
   render();
+  if (state.selectedRegionId) showRegionDetail(state.selectedRegionId);
+  else detailPanel.style.display = 'none';
 }
 
 function updateRegionType(id, type, label) {
@@ -568,6 +671,7 @@ function updateUI() {
       state.selectedRegionId = r.id;
       updateUI();
       render();
+      showRegionDetail(r.id);
     });
     div.querySelector('.ri-del').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -604,7 +708,23 @@ document.getElementById('typeGrid').addEventListener('click', (e) => {
   const type = btn.dataset.type;
   const label = document.getElementById('regionLabel').value.trim();
   if (state.pendingRegion) {
+    // Update ai_processed type when changing type of an existing region
+    const region = state.regions.find(r => r.id === state.pendingRegion);
+    if (region && region.ai_processed) {
+      if (type === 'text_area') {
+        region.ai_processed.type = 'text';
+        if (!region.ai_processed.font) region.ai_processed.font = 'Arial';
+        if (!region.ai_processed.font_size) region.ai_processed.font_size = 18;
+        if (!region.ai_processed.color) region.ai_processed.color = '#000000';
+      } else if (type === 'shape_bg') {
+        region.ai_processed.type = 'shape';
+        if (!region.ai_processed.fill) region.ai_processed.fill = '#E0E0E0';
+      } else {
+        region.ai_processed.type = 'image';
+      }
+    }
     updateRegionType(state.pendingRegion, type, label);
+    if (state.selectedRegionId) showRegionDetail(state.selectedRegionId);
   }
   hideTypePopup();
 });
@@ -614,6 +734,7 @@ document.getElementById('typeConfirm').addEventListener('click', () => {
     const type = firstBtn ? firstBtn.dataset.type : 'text_area';
     const label = document.getElementById('regionLabel').value.trim();
     updateRegionType(state.pendingRegion, type, label);
+    if (state.selectedRegionId) showRegionDetail(state.selectedRegionId);
   }
   hideTypePopup();
 });
@@ -640,12 +761,15 @@ function loadImage(file) {
       state.imgH = img.height;
       state.regions = [];
       state.selectedRegionId = null;
+      state.selectedAiPreview = null;
       state.nextId = 1;
+      detailPanel.style.display = 'none';
       document.getElementById('canvasWrap').classList.add('has-image');
       statusSize.textContent = '图片: ' + img.width + ' x ' + img.height;
       fileInput.value = '';
       resetView();
       updateUI();
+      if (state.ollamaAvailable) aiAnalyzeBtn.disabled = false;
       msg('已加载: ' + file.name + ' (' + img.width + 'x' + img.height + ')');
     };
     img.src = e.target.result;
@@ -698,6 +822,8 @@ document.getElementById('undoBtn').addEventListener('click', () => {
   if (state.regions.length > 0) {
     state.regions.pop();
     state.selectedRegionId = state.regions.length > 0 ? state.regions[state.regions.length - 1].id : null;
+    if (state.selectedRegionId) showRegionDetail(state.selectedRegionId);
+    else { detailPanel.style.display = 'none'; state.selectedAiPreview = null; }
     updateUI();
     render();
   }
@@ -706,6 +832,8 @@ document.getElementById('clearBtn').addEventListener('click', () => {
   if (state.regions.length > 0 && confirm('确定清空所有标注区域？')) {
     state.regions = [];
     state.selectedRegionId = null;
+    detailPanel.style.display = 'none';
+    state.selectedAiPreview = null;
     updateUI();
     render();
   }
@@ -938,7 +1066,248 @@ async function doSamSegment(imgX, imgY, canvasX, canvasY) {
   }
 }
 
-// ===== Export Manifest =====
+// ===== Ollama / Qwen-VL Service =====
+async function checkOllamaService() {
+  try {
+    const resp = await fetch(state.ollamaUrl + '/health', { signal: AbortSignal.timeout(3000) });
+    const data = await resp.json();
+    if (data.status === 'ok') {
+      state.ollamaAvailable = true;
+      aiAnalyzeBtn.disabled = !state.img;
+      const modelOk = data.model_available ? '' : ' (模型未就绪)';
+      aiStatus.textContent = '在线' + modelOk;
+      aiStatus.style.color = data.model_available ? '#4ade80' : '#ffb74d';
+    } else {
+      state.ollamaAvailable = false;
+      aiAnalyzeBtn.disabled = true;
+      aiStatus.textContent = '离线';
+      aiStatus.style.color = '#888';
+    }
+  } catch {
+    state.ollamaAvailable = false;
+    aiAnalyzeBtn.disabled = true;
+    aiStatus.textContent = '离线';
+    aiStatus.style.color = '#888';
+  }
+}
+
+async function aiAnalyzeImage() {
+  if (!state.img || state.isAnalyzing) return;
+  if (!state.ollamaAvailable) {
+    msg('AI 服务未连接');
+    return;
+  }
+
+  state.isAnalyzing = true;
+  aiAnalyzeBtn.disabled = true;
+  aiAnalyzeBtn.textContent = '分析中...';
+  detailPanel.style.display = 'none';
+
+  // Show loading in region list area
+  const loadingDiv = document.createElement('div');
+  loadingDiv.className = 'analyze-loading';
+  loadingDiv.id = 'aiLoading';
+  loadingDiv.innerHTML = '<div class="spinner"></div><span>AI 正在分析图片，请稍候...</span>';
+  regionList.parentNode.insertBefore(loadingDiv, regionList.nextSibling);
+
+  msg('AI 分析中...');
+  try {
+    const resp = await fetch(state.ollamaUrl + '/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(180000),
+      body: JSON.stringify({ image: state.imgDataUrl, timeout: 120 }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'HTTP ' + resp.status);
+
+    const regions = data.regions || [];
+    if (regions.length === 0) {
+      msg('AI 未识别到任何区域');
+      state.isAnalyzing = false;
+      aiAnalyzeBtn.textContent = 'AI 分析';
+      aiAnalyzeBtn.disabled = false;
+      document.getElementById('aiLoading')?.remove();
+      return;
+    }
+
+    // Create regions from AI results
+    for (const r of regions) {
+      const region = {
+        id: r.id || genId(),
+        user_type: r.user_type || 'text_area',
+        label: r.label || '',
+        annotation: r.annotation || {
+          tool: 'ai_auto',
+          bbox: [0, 0, 100, 100],
+          mask_polygon: null,
+          use_mask: false,
+        },
+        ai_processed: r.ai_processed || null,
+        created_at: new Date().toISOString(),
+      };
+      state.regions.push(region);
+    }
+
+    // Select first region
+    state.selectedRegionId = state.regions.length > 0 ? state.regions[0].id : null;
+    state.nextId = state.regions.length + 1;
+
+    updateUI();
+    render();
+    showRegionDetail(state.selectedRegionId);
+
+    msg('AI 分析完成，识别了 ' + regions.length + ' 个区域');
+  } catch (err) {
+    msg('AI 分析失败: ' + err.message);
+    showError('AI 分析失败: ' + err.message);
+  } finally {
+    state.isAnalyzing = false;
+    aiAnalyzeBtn.textContent = 'AI 分析';
+    aiAnalyzeBtn.disabled = false;
+    document.getElementById('aiLoading')?.remove();
+  }
+}
+
+function showError(msgText) {
+  detailPanel.style.display = 'block';
+  detailType.textContent = '错误';
+  detailContent.innerHTML = '<div class="analyze-error">' + escapeHtml(msgText) + '</div>';
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ===== Region Detail Panel =====
+function showRegionDetail(regionId) {
+  if (!regionId) {
+    detailPanel.style.display = 'none';
+    state.selectedAiPreview = null;
+    render();
+    return;
+  }
+
+  const region = state.regions.find(r => r.id === regionId);
+  if (!region) {
+    detailPanel.style.display = 'none';
+    state.selectedAiPreview = null;
+    render();
+    return;
+  }
+
+  const ai = region.ai_processed;
+  const cfg = TYPE_CONFIG[region.user_type] || TYPE_CONFIG.text_area;
+
+  if (!ai) {
+    detailPanel.style.display = 'block';
+    detailType.textContent = cfg.label;
+    detailContent.innerHTML =
+      '<div class="detail-row"><span class="label" style="color:#888">手动标注区域，无 AI 识别数据</span></div>' +
+      '<div style="margin-top:8px"><button class="secondary-btn" onclick="openTypeChangePopup(\'' + region.id + '\')" style="font-size:11px">更改类型</button></div>';
+    state.selectedAiPreview = null;
+    render();
+    return;
+  }
+
+  detailPanel.style.display = 'block';
+  detailType.textContent = cfg.label;
+  state.selectedAiPreview = null;
+
+  let html = '';
+  const type = ai.type || region.user_type;
+
+  if (type === 'text' || region.user_type === 'text_area') {
+    const text = ai.text || '';
+    const font = ai.font || 'Arial';
+    const fontSize = ai.font_size || 18;
+    const color = ai.color || '#000000';
+
+    // Store for canvas preview
+    state.selectedAiPreview = { text, font, fontSize, color };
+
+    html += '<div class="detail-row"><span class="label">文字</span><div class="value"><input type="text" id="aiTextEdit" value="' + escapeHtml(text) + '" placeholder="识别文字..."></div></div>';
+    html += '<div class="detail-row"><span class="label">字体</span><span class="value">' + escapeHtml(font) + ' ' + fontSize + 'pt</span></div>';
+    html += '<div class="detail-row"><span class="label">颜色</span><span class="value"><span class="color-swatch" style="background:' + color + '"></span>' + color + '</span></div>';
+
+    // Preview rendering
+    html += '<div class="detail-preview-text" style="font-family:' + escapeHtml(font) + ';font-size:' + fontSize + 'px;color:' + color + '">' + escapeHtml(text) + '</div>';
+
+    html += '<div style="margin-top:8px"><button class="secondary-btn" onclick="openTypeChangePopup(\'' + region.id + '\')" style="font-size:11px">更改类型</button></div>';
+
+    detailContent.innerHTML = html;
+
+    // Wire up text editing
+    const textInput = document.getElementById('aiTextEdit');
+    if (textInput) {
+      textInput.addEventListener('input', (e) => {
+        if (region.ai_processed) {
+          region.ai_processed.text = e.target.value;
+          state.selectedAiPreview.text = e.target.value;
+          // Update preview text
+          const preview = detailContent.querySelector('.detail-preview-text');
+          if (preview) preview.textContent = e.target.value;
+          render();
+        }
+      });
+    }
+
+  } else if (type === 'shape' || region.user_type === 'shape_bg') {
+    const fill = ai.fill || '#E0E0E0';
+    const shape = ai.shape || 'rect';
+
+    state.selectedAiPreview = null;
+    html += '<div class="detail-row"><span class="label">形状</span><span class="value">' + escapeHtml(shape) + '</span></div>';
+    html += '<div class="detail-row"><span class="label">填充</span><span class="value"><span class="color-swatch" style="background:' + fill + '"></span>' + fill + '</span></div>';
+    html += '<div style="margin-top:8px"><button class="secondary-btn" onclick="openTypeChangePopup(\'' + region.id + '\')" style="font-size:11px">更改类型</button></div>';
+
+    detailContent.innerHTML = html;
+
+  } else if (type === 'image' || ['icon','keep_image','formula'].includes(region.user_type)) {
+    const text = ai.text || '';
+    state.selectedAiPreview = null;
+
+    html += '<div class="detail-row"><span class="label">类型</span><span class="value">' + cfg.label + '</span></div>';
+    if (text) {
+      html += '<div class="detail-row"><span class="label">内容</span><span class="value">' + escapeHtml(text) + '</span></div>';
+    }
+
+    // Show a cropped preview from the source image
+    const bbox = region.annotation.bbox;
+    if (state.img && bbox) {
+      const [x, y, w, h] = bbox;
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = w;
+      tempCanvas.height = h;
+      const tCtx = tempCanvas.getContext('2d');
+      tCtx.drawImage(state.img, x, y, w, h, 0, 0, w, h);
+      const dataUrl = tempCanvas.toDataURL('image/png');
+      const maxPreview = 200;
+      const scale = Math.min(1, maxPreview / Math.max(w, h));
+      html += '<div class="detail-row"><span class="label">预览</span><span class="value"><img src="' + dataUrl + '" style="max-width:' + (w * scale) + 'px;max-height:' + (h * scale) + 'px;border-radius:4px;border:1px solid #0f3460"></span></div>';
+    }
+
+    html += '<div style="margin-top:8px"><button class="secondary-btn" onclick="openTypeChangePopup(\'' + region.id + '\')" style="font-size:11px">更改类型</button></div>';
+
+    detailContent.innerHTML = html;
+
+  } else {
+    state.selectedAiPreview = null;
+    html += '<div class="detail-row"><span class="label">类型</span><span class="value">' + cfg.label + '</span></div>';
+    html += '<div style="margin-top:8px"><button class="secondary-btn" onclick="openTypeChangePopup(\'' + region.id + '\')" style="font-size:11px">更改类型</button></div>';
+    detailContent.innerHTML = html;
+  }
+}
+
+function openTypeChangePopup(regionId) {
+  const region = state.regions.find(r => r.id === regionId);
+  if (!region) return;
+  const rect = detailPanel.getBoundingClientRect();
+  showTypePopup(rect.left + 20, rect.top + 40, regionId);
+  document.getElementById('regionLabel').value = region.label || '';
+}
 document.getElementById('exportBtn').addEventListener('click', () => {
   if (state.regions.length === 0) { msg('请先标注至少一个区域'); return; }
 
@@ -948,8 +1317,10 @@ document.getElementById('exportBtn').addEventListener('click', () => {
     source_image_h: state.imgH,
     annotator: { tool: 'image-to-editable-ppt', version: '2.0', output_at: new Date().toISOString() },
     ai_recognition: document.getElementById('aiToggle').checked,
+    ai_model: 'qwen-vl-ollama',
     elements: state.regions.map(r => ({
       id: r.id, user_type: r.user_type, label: r.label, annotation: r.annotation,
+      ai_processed: r.ai_processed || null,
     })),
   };
 
@@ -1022,6 +1393,9 @@ function init() {
   canvas.height = canvasWrap.clientHeight - 4;
   checkSamService();
   setInterval(checkSamService, 10000);
+  checkOllamaService();
+  setInterval(checkOllamaService, 10000);
+  aiAnalyzeBtn.addEventListener('click', aiAnalyzeImage);
   window.addEventListener('resize', () => {
     canvas.width = canvasWrap.clientWidth;
     canvas.height = canvasWrap.clientHeight - 4;
