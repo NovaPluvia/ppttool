@@ -29,6 +29,16 @@ venv/
 Thumbs.db
 .DS_Store
 
-# Claude 本地配置（保留远程需要的配置）
-.claude/settings.local.json
-.claude/launch.json
+# 导出文件（annotation manifest + source images）
+annotation-manifest*.json
+source-image*.png
+*crops/
+
+# 临时测试图片
+01-*.png
+
+# 模型目录（自动下载）
+models/
+
+# Claude 配置（本地环境）
+.claude/
