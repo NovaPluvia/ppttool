@@ -332,7 +332,8 @@ const state = {
   zoomFitScale: 1,  // cached scale for "100%" reference
   exportCounter: 1,  // 导出文件编号计数器
   ollamaAvailable: false,
-  ollamaUrl: 'http://localhost:5680',
+  // 从服务器加载时自动同源，本地文件打开时使用默认地址
+  ollamaUrl: (window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:5680'),
   isAnalyzing: false,
   selectedAiPreview: null,  // {text, font, fontSize, color} for canvas preview
 };
