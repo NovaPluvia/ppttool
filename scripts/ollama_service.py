@@ -19,7 +19,7 @@ import re
 import sys
 import time
 import traceback
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -362,7 +362,7 @@ class OllamaHandler(BaseHTTPRequestHandler):
 
             body = json.loads(self.rfile.read(length).decode("utf-8"))
             data_url = body.get("image", "")
-            timeout = int(body.get("timeout", 120))
+            timeout = int(body.get("timeout", 300))
 
             if not data_url:
                 self._send_json(400, {"error": "Missing 'image' field"})
@@ -427,8 +427,8 @@ class OllamaHandler(BaseHTTPRequestHandler):
             self._send_json(500, {"error": str(e)})
 
 
-class OllamaServer(HTTPServer):
-    """HTTP server that carries extra configuration."""
+class OllamaServer(ThreadingHTTPServer):
+    """Threaded HTTP server — health checks won't block during analysis."""
     ollama_url: str = DEFAULT_OLLAMA_URL
 
 

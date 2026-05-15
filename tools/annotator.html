@@ -1115,8 +1115,8 @@ async function aiAnalyzeImage() {
     const resp = await fetch(state.ollamaUrl + '/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(180000),
-      body: JSON.stringify({ image: state.imgDataUrl, timeout: 120 }),
+      signal: AbortSignal.timeout(300000),
+      body: JSON.stringify({ image: state.imgDataUrl, timeout: 300 }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'HTTP ' + resp.status);
