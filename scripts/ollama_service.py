@@ -31,7 +31,7 @@ from PIL import Image
 # ── Config ──────────────────────────────────────────────────────────────
 DEFAULT_PORT = 5680
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
-MODEL = "qwen3.6:27b"
+DEFAULT_MODEL = "qwen3.6:27b"
 MAX_IMAGE_SIZE = 1024  # longest edge in px — resize to speed up
 
 # ── Prompt ──────────────────────────────────────────────────────────────
@@ -336,11 +336,11 @@ class OllamaHandler(BaseHTTPRequestHandler):
             tags = json.loads(resp.read().decode("utf-8"))
             models = [t["name"] for t in tags.get("models", [])]
 
-            model_available = any(MODEL in m for m in models)
+            model_available = any(self.server.model in m for m in models)
 
             self._send_json(200, {
                 "status": "ok",
-                "model": MODEL,
+                "model": self.server.model,
                 "model_available": model_available,
                 "available_models": models[:10],
                 "ollama_url": self.server.ollama_url,
@@ -348,7 +348,7 @@ class OllamaHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_json(200, {
                 "status": "error",
-                "model": MODEL,
+                "model": self.server.model,
                 "error": str(e),
             })
 
@@ -387,11 +387,11 @@ class OllamaHandler(BaseHTTPRequestHandler):
             )
 
             # Call Ollama
-            print(f"  [analyze] Calling Ollama model={MODEL}...")
+            print(f"  [analyze] Calling Ollama model={self.server.model}...")
             t0 = time.time()
             response = call_ollama(
                 self.server.ollama_url,
-                MODEL,
+                self.server.model,
                 b64,
                 SYSTEM_PROMPT,
                 user_prompt,
@@ -429,22 +429,26 @@ class OllamaHandler(BaseHTTPRequestHandler):
 
 class OllamaServer(ThreadingHTTPServer):
     """Threaded HTTP server — health checks won't block during analysis."""
+    allow_reuse_address = False  # 禁止端口复用，避免多个进程抢端口
     ollama_url: str = DEFAULT_OLLAMA_URL
+    model: str = DEFAULT_MODEL
 
 
 def main():
     parser = argparse.ArgumentParser(description="Ollama bridge service for Qwen-VL")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Port (default: {DEFAULT_PORT})")
     parser.add_argument("--ollama-url", default=DEFAULT_OLLAMA_URL, help=f"Ollama URL (default: {DEFAULT_OLLAMA_URL})")
+    parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Model name (default: {DEFAULT_MODEL})")
     args = parser.parse_args()
 
     server = OllamaServer(("0.0.0.0", args.port), OllamaHandler)
     server.ollama_url = args.ollama_url.rstrip("/")
+    server.model = args.model
 
     print(f"  Ollama bridge service starting...")
     print(f"  Listen:     http://localhost:{args.port}")
     print(f"  Ollama:     {server.ollama_url}")
-    print(f"  Model:      {MODEL}")
+    print(f"  Model:      {server.model}")
     print(f"  Max image:  {MAX_IMAGE_SIZE}px (longest edge)")
     print()
     print(f"  Endpoints:")
