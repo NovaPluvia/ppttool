@@ -317,12 +317,6 @@ class OllamaHandler(BaseHTTPRequestHandler):
         if path == "/" or path == "/annotator.html":
             return self._serve_static("tools/annotator.html")
 
-        # favicon.ico — silently ignore
-        if path == "/favicon.ico":
-            self.send_response(204)
-            self.end_headers()
-            return
-
         # Strip leading slash → relative path
         rel = path.lstrip("/")
         if rel:
