@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PPT 标注工具 — Image to Editable PPT</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
+  background: #1a1a2e; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column;
+  user-select: none; overflow: hidden;
+}
+
+.header {
+  background: #16213e; padding: 8px 16px; display: flex; align-items: center; gap: 12px;
+  border-bottom: 1px solid #0f3460; flex-shrink: 0;
+}
+.header h1 { font-size: 16px; font-weight: 600; color: #e94560; }
+.header .subtitle { font-size: 12px; color: #888; }
+.header .spacer { flex: 1; }
+
+.toolbar {
+  background: #16213e; padding: 6px 12px; display: flex; align-items: center; gap: 4px;
+  border-bottom: 1px solid #0f3460; flex-shrink: 0; flex-wrap: wrap;
+}
+.tool-group { display: flex; gap: 2px; margin-right: 12px; align-items: center; }
+.tool-group label { font-size: 12px; color: #888; margin-right: 4px; }
+.tool-btn {
+  background: transparent; border: 1px solid #0f3460; color: #ccc; padding: 5px 12px;
+  font-size: 13px; border-radius: 4px; cursor: pointer; transition: all .15s;
+  font-family: inherit; white-space: nowrap;
+}
+.tool-btn:hover { background: #0f3460; color: #fff; }
+.tool-btn.active { background: #e94560; border-color: #e94560; color: #fff; }
+.tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.tool-btn .badge { font-size: 10px; opacity: 0.7; margin-left: 4px; }
+.toolbar select {
+  background: #0d0d1a; border: 1px solid #0f3460; color: #e0e0e0;
+  padding: 4px 8px; border-radius: 4px; font-size: 12px; font-family: inherit; cursor: pointer;
+}
+.toolbar select:focus { outline: none; border-color: #e94560; }
+.separator { width: 1px; height: 24px; background: #0f3460; margin: 0 8px; }
+.action-btn {
+  background: #e94560; border: none; color: #fff; padding: 5px 16px; font-size: 13px;
+  border-radius: 4px; cursor: pointer; font-family: inherit; font-weight: 600; transition: all .15s;
+}
+.action-btn:hover { background: #c73650; }
+.action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ai-toggle { font-size: 12px; color: #ccc; cursor: pointer; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.ai-toggle input { cursor: pointer; accent-color: #e94560; }
+.secondary-btn {
+  background: transparent; border: 1px solid #0f3460; color: #ccc; padding: 5px 12px;
+  font-size: 13px; border-radius: 4px; cursor: pointer; font-family: inherit; transition: all .15s;
+}
+.secondary-btn:hover { background: #0f3460; color: #fff; }
+
+.main { display: flex; flex: 1; overflow: hidden; }
+.canvas-wrap {
+  flex: 1; position: relative; background: #0d0d1a; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.canvas-wrap canvas { display: block; cursor: crosshair; }
+.canvas-wrap .drop-hint {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; color: #555; z-index: 1; gap: 16px;
+  pointer-events: none;
+}
+.canvas-wrap .drop-hint .icon { font-size: 48px; opacity: 0.5; }
+.canvas-wrap .drop-hint .text { font-size: 16px; }
+.canvas-wrap .drop-hint .sub { font-size: 13px; color: #444; }
+.canvas-wrap.has-image .drop-hint { display: none; }
+
+.panel {
+  width: 280px; background: #16213e; border-left: 1px solid #0f3460;
+  display: flex; flex-direction: column; flex-shrink: 0;
+}
+.panel-header { padding: 10px 12px; font-size: 14px; font-weight: 600; border-bottom: 1px solid #0f3460; display:flex;align-items:center;gap:8px; }
+.panel-header .count { color: #888; font-weight: normal; font-size: 12px; }
+.panel-header .view-btn {
+  margin-left:auto; background:transparent; border:1px solid #0f3460; color:#888;
+  padding:2px 8px; border-radius:4px; cursor:pointer; font-size:11px; font-family:inherit;
+}
+.panel-header .view-btn:hover { border-color:#e94560; color:#e94560; }
+.region-list { flex: 1; overflow-y: auto; padding: 4px; }
+.region-item {
+  background: #1a1a3e; border: 1px solid #0f3460; border-radius: 6px; margin-bottom: 4px;
+  padding: 8px; cursor: pointer; transition: all .15s;
+}
+.region-item:hover { border-color: #e94560; }
+.region-item.active { border-color: #e94560; background: #1a1a3e; box-shadow: 0 0 8px rgba(233,69,96,0.3); }
+.region-item .ri-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.region-item .ri-type {
+  font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 600; white-space: nowrap;
+}
+.region-item .ri-label { font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.region-item .ri-del {
+  background: none; border: none; color: #666; cursor: pointer; font-size: 14px; padding: 0 2px;
+  line-height: 1;
+}
+.region-item .ri-del:hover { color: #e94560; }
+.region-item .ri-tool { font-size: 11px; color: #666; }
+
+.type-popup {
+  position: fixed; background: #1a1a3e; border: 1px solid #0f3460; border-radius: 8px;
+  padding: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); z-index: 100;
+  display: none; min-width: 220px;
+}
+.type-popup .tp-title { font-size: 12px; color: #888; margin-bottom: 8px; }
+.type-popup .tp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.type-popup .tp-btn {
+  background: #16213e; border: 1px solid #0f3460; color: #ccc; padding: 6px 8px; font-size: 12px;
+  border-radius: 4px; cursor: pointer; text-align: center; transition: all .1s; font-family: inherit;
+}
+.type-popup .tp-btn:hover { background: #0f3460; color: #fff; border-color: #e94560; }
+.type-popup .tp-btn .tp-icon { display: block; font-size: 16px; margin-bottom: 2px; }
+.type-popup .tp-label-input { margin-top: 8px; display: flex; gap: 4px; }
+.type-popup .tp-label-input input {
+  flex: 1; background: #0d0d1a; border: 1px solid #0f3460; color: #e0e0e0; padding: 4px 8px;
+  border-radius: 4px; font-size: 12px; font-family: inherit;
+}
+.type-popup .tp-label-input input:focus { outline: none; border-color: #e94560; }
+.type-popup .tp-confirm {
+  background: #e94560; border: none; color: #fff; padding: 4px 12px; border-radius: 4px;
+  cursor: pointer; font-size: 12px; font-family: inherit; font-weight: 600;
+}
+.type-popup .tp-cancel {
+  background: transparent; border: 1px solid #0f3460; color: #888; padding: 4px 8px;
+  border-radius: 4px; cursor: pointer; font-size: 12px; font-family: inherit;
+}
+
+.status-bar {
+  background: #16213e; padding: 4px 12px; display: flex; align-items: center; gap: 16px;
+  font-size: 11px; color: #666; border-top: 1px solid #0f3460; flex-shrink: 0;
+}
+.status-bar .status-sam { display: flex; align-items: center; gap: 4px; }
+.status-bar .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.status-bar .dot.online { background: #4ade80; }
+.status-bar .dot.offline { background: #666; }
+.status-bar .status-coords { font-family: monospace; }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #1a5276; }
+
+.zoom-indicator {
+  position: absolute; bottom: 12px; right: 12px; background: rgba(22,33,62,0.85);
+  border: 1px solid #0f3460; border-radius: 6px; padding: 4px 10px; font-size: 12px; color: #888;
+  display: none; z-index: 10;
+}
+.zoom-indicator.visible { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>PPT 标注工具</h1>
+  <span class="subtitle">圈定元素 - 标记类型 - 导出 - AI 自动转 PPT</span>
+  <div class="spacer"></div>
+</div>
+
+<div class="toolbar">
+  <div class="tool-group">
+    <label>工具:</label>
+    <button class="tool-btn active" data-tool="rect" title="矩形: 拖拽画框 (R)">[ ] 矩形</button>
+    <button class="tool-btn" data-tool="lasso" title="套索: 点击开始, 再次点击或Enter闭合 (L)">~ 套索</button>
+    <button class="tool-btn" data-tool="ai_click" id="aiBtn" disabled title="AI分割: 需要启动SAM服务">
+      AI 分割 <span class="badge" id="aiBadge">离线</span>
+    </button>
+  </div>
+  <div class="separator"></div>
+  <div class="tool-group">
+    <label>类型:</label>
+    <select id="preTypeSelect">
+      <option value="text_area">文字区</option>
+      <option value="shape_bg">背景框</option>
+      <option value="icon">图标</option>
+      <option value="keep_image">整体保留</option>
+      <option value="convert_svg">转SVG</option>
+      <option value="decorative">装饰</option>
+      <option value="formula">公式</option>
+    </select>
+  </div>
+  <div class="separator"></div>
+  <div class="tool-group">
+    <button class="tool-btn" data-tool="pan" title="平移 (P)">hand 平移</button>
+    <button class="tool-btn" id="zoomInBtn">zoom +</button>
+    <button class="tool-btn" id="zoomOutBtn">zoom -</button>
+    <button class="tool-btn" id="zoomFitBtn">fit 适应</button>
+  </div>
+  <div class="separator"></div>
+  <div class="tool-group">
+    <button class="secondary-btn" id="undoBtn" disabled>undo 撤销</button>
+    <button class="secondary-btn" id="clearBtn" disabled>clear 清空</button>
+  </div>
+  <div class="separator"></div>
+  <div class="tool-group">
+    <label class="ai-toggle" title="关闭时跳过 OCR 和颜色检测，直接生成 PPTX">
+      <input type="checkbox" id="aiToggle" checked> AI 识别
+    </label>
+  </div>
+  <div class="separator"></div>
+  <div class="tool-group">
+    <button class="action-btn" id="exportBtn" disabled>export 导出 JSON</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="canvas"></canvas>
+    <div class="drop-hint">
+      <div class="icon">[img]</div>
+      <div class="text">拖拽图片到此处，或 <a href="#" id="filePickLink" style="color:#e94560;pointer-events:auto;">点击选择文件</a></div>
+      <div class="sub">支持 PNG / JPG / WebP</div>
+    </div>
+    <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp" style="display:none">
+    <div class="zoom-indicator" id="zoomIndicator">100%</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <span>已标注区域 <span class="count" id="regionCount">(0)</span></span>
+      <button class="view-btn" id="viewRegionBtn" disabled title="聚焦到选中区域">聚焦</button>
+    </div>
+    <div class="region-list" id="regionList"></div>
+  </div>
+</div>
+
+<div class="type-popup" id="typePopup">
+  <div class="tp-title">选择该区域的类型：</div>
+  <div class="tp-grid" id="typeGrid">
+    <button class="tp-btn" data-type="text_area"><span class="tp-icon">Aa</span>文字区</button>
+    <button class="tp-btn" data-type="shape_bg"><span class="tp-icon">[]</span>背景框</button>
+    <button class="tp-btn" data-type="icon"><span class="tp-icon">[i]</span>图标</button>
+    <button class="tp-btn" data-type="keep_image"><span class="tp-icon">[p]</span>整体保留</button>
+    <button class="tp-btn" data-type="convert_svg"><span class="tp-icon">*</span>转SVG</button>
+    <button class="tp-btn" data-type="decorative"><span class="tp-icon">~</span>装饰</button>
+    <button class="tp-btn" data-type="formula"><span class="tp-icon">∫</span>公式</button>
+  </div>
+  <div class="tp-label-input">
+    <input type="text" id="regionLabel" placeholder="对此区域的描述（选填）" maxlength="60">
+    <button class="tp-cancel" id="typeCancel">取消</button>
+    <button class="tp-confirm" id="typeConfirm">确认</button>
+  </div>
+</div>
+
+<div class="status-bar">
+  <div class="status-sam">
+    <span class="dot offline" id="samDot"></span>
+    <span id="samStatus">SAM 服务: 未连接</span>
+  </div>
+  <div class="status-coords" id="statusCoords">鼠标: (--, --)</div>
+  <div class="status-coords" id="statusSize">图片: 未加载</div>
+  <div style="flex:1"></div>
+  <div id="statusMsg" style="color:#888"></div>
+</div>
+
+<script>
+// ===== State =====
+const TYPE_CONFIG = {
+  text_area:    { label: '文字区',   color: '#4FC3F7' },
+  shape_bg:     { label: '背景框',   color: '#FFB74D' },
+  icon:         { label: '图标',     color: '#81C784' },
+  keep_image:   { label: '整体保留', color: '#CE93D8' },
+  convert_svg:  { label: '转SVG',    color: '#F06292' },
+  decorative:   { label: '装饰',     color: '#90A4AE' },
+  formula:      { label: '公式',     color: '#FF6B6B' },
+};
+
+const state = {
+  img: null,
+  imgDataUrl: null,
+  regions: [],
+  selectedRegionId: null,
+  currentTool: 'rect',
+  isDrawing: false,
+  scale: 1, offsetX: 0, offsetY: 0,
+  imgW: 0, imgH: 0,
+  rectStart: null,
+  rectCurrent: null,
+  lassoPoints: [],
+  panStart: null,
+  panStartOffset: null,
+  samAvailable: false,
+  samUrl: 'http://localhost:5678',
+  pendingRegion: null,
+  nextId: 1,
+  zoomFitScale: 1,  // cached scale for "100%" reference
+  exportCounter: 1,  // 导出文件编号计数器
+};
+
+// ===== DOM refs =====
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const canvasWrap = document.getElementById('canvasWrap');
+const fileInput = document.getElementById('fileInput');
+const filePickLink = document.getElementById('filePickLink');
+const regionList = document.getElementById('regionList');
+const regionCount = document.getElementById('regionCount');
+const typePopup = document.getElementById('typePopup');
+const exportBtn = document.getElementById('exportBtn');
+const undoBtn = document.getElementById('undoBtn');
+const clearBtn = document.getElementById('clearBtn');
+const viewRegionBtn = document.getElementById('viewRegionBtn');
+const aiBtn = document.getElementById('aiBtn');
+const aiBadge = document.getElementById('aiBadge');
+const samDot = document.getElementById('samDot');
+const samStatus = document.getElementById('samStatus');
+const statusCoords = document.getElementById('statusCoords');
+const statusSize = document.getElementById('statusSize');
+const statusMsg = document.getElementById('statusMsg');
+const zoomIndicator = document.getElementById('zoomIndicator');
+const preTypeSelect = document.getElementById('preTypeSelect');
+
+function genId() { return 'r' + String(state.nextId++).padStart(3, '0'); }
+function msg(text) { statusMsg.textContent = text; setTimeout(() => { if (statusMsg.textContent === text) statusMsg.textContent = ''; }, 4000); }
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+// ===== Canvas coordinate transforms =====
+function getCanvasPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+function canvasToImage(cx, cy) {
+  const imgCenterX = canvas.width / 2 + state.offsetX;
+  const imgCenterY = canvas.height / 2 + state.offsetY;
+  return {
+    x: (cx - imgCenterX) / state.scale + state.imgW / 2,
+    y: (cy - imgCenterY) / state.scale + state.imgH / 2,
+  };
+}
+
+function imageToCanvas(ix, iy) {
+  const imgCenterX = canvas.width / 2 + state.offsetX;
+  const imgCenterY = canvas.height / 2 + state.offsetY;
+  return {
+    x: (ix - state.imgW / 2) * state.scale + imgCenterX,
+    y: (iy - state.imgH / 2) * state.scale + imgCenterY,
+  };
+}
+
+function resetView() {
+  if (!state.img) return;
+  const wrapW = canvasWrap.clientWidth;
+  const wrapH = canvasWrap.clientHeight - 4;
+  canvas.width = wrapW;
+  canvas.height = wrapH;
+  const s = Math.min(wrapW / state.imgW, wrapH / state.imgH) * 0.9;
+  state.scale = s;
+  state.zoomFitScale = s;
+  state.offsetX = 0;
+  state.offsetY = 0;
+  render();
+}
+
+function focusRegion(regionId) {
+  const r = state.regions.find(x => x.id === regionId);
+  if (!r) return;
+  const bx = r.annotation.bbox[0], by = r.annotation.bbox[1];
+  const bw = r.annotation.bbox[2], bh = r.annotation.bbox[3];
+  const wrapW = canvasWrap.clientWidth;
+  const wrapH = canvasWrap.clientHeight - 4;
+  canvas.width = wrapW;
+  canvas.height = wrapH;
+  // 目标：选中区域占视口较窄边的 55%，保留周围上下文可见
+  const targetFill = 0.55;
+  let s = Math.min((wrapW * targetFill) / bw, (wrapH * targetFill) / bh);
+  s = Math.min(s, 50);  // 上限防过度放大
+  state.scale = s;
+  // 将区域中心对齐到画布中心
+  state.offsetX = -(bx + bw / 2 - state.imgW / 2) * state.scale;
+  state.offsetY = -(by + bh / 2 - state.imgH / 2) * state.scale;
+  render();
+}
+
+// ===== Render =====
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!state.img) return;
+
+  const cx = canvas.width / 2 + state.offsetX;
+  const cy = canvas.height / 2 + state.offsetY;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(state.scale, state.scale);
+  ctx.drawImage(state.img, -state.imgW / 2, -state.imgH / 2);
+  ctx.restore();
+
+  for (const region of state.regions) {
+    drawRegion(region, region.id === state.selectedRegionId);
+  }
+
+  // Draw in-progress shape
+  if (state.isDrawing) {
+    if (state.currentTool === 'rect' && state.rectStart && state.rectCurrent) {
+      const sx = Math.min(state.rectStart.x, state.rectCurrent.x);
+      const sy = Math.min(state.rectStart.y, state.rectCurrent.y);
+      const sw = Math.abs(state.rectCurrent.x - state.rectStart.x);
+      const sh = Math.abs(state.rectCurrent.y - state.rectStart.y);
+      ctx.save();
+      ctx.strokeStyle = '#e94560';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 3]);
+      ctx.strokeRect(sx, sy, sw, sh);
+      ctx.fillStyle = 'rgba(233,69,96,0.1)';
+      ctx.fillRect(sx, sy, sw, sh);
+      ctx.restore();
+    }
+  }
+
+  // Lasso 路径：独立于 isDrawing，只要有 points 就绘制
+  if (state.currentTool === 'lasso' && state.lassoPoints.length > 0) {
+    ctx.save();
+    ctx.strokeStyle = '#e94560';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 3]);
+    ctx.beginPath();
+    const p0 = state.lassoPoints[0];
+    ctx.moveTo(p0.x, p0.y);
+    for (let i = 1; i < state.lassoPoints.length; i++) {
+      ctx.lineTo(state.lassoPoints[i].x, state.lassoPoints[i].y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  updateZoomIndicator();
+}
+
+function drawRegion(region, isActive) {
+  const bx = region.annotation.bbox[0], by = region.annotation.bbox[1];
+  const bw = region.annotation.bbox[2], bh = region.annotation.bbox[3];
+  const cfg = TYPE_CONFIG[region.user_type] || TYPE_CONFIG.text_area;
+
+  const tl = imageToCanvas(bx, by);
+  const br = imageToCanvas(bx + bw, by + bh);
+
+  // 判断是否有有效多边形（套索/AI分割区域）
+  const usePolygon = region.annotation.use_mask &&
+                     region.annotation.mask_polygon &&
+                     region.annotation.mask_polygon.length >= 3;
+
+  ctx.save();
+
+  if (usePolygon) {
+    // 绘制多边形形状
+    const pts = region.annotation.mask_polygon.map(p => imageToCanvas(p[0], p[1]));
+
+    ctx.fillStyle = isActive ? 'rgba(233,69,96,0.15)' : cfg.color + '22';
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x, pts[i].y);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = isActive ? '#e94560' : cfg.color;
+    ctx.lineWidth = isActive ? 2.5 : 2;
+    ctx.setLineDash(isActive ? [] : [4, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);  // 恢复实线，避免影响后续绘制
+  } else {
+    // 矩形区域（矩形工具）
+    const cw = br.x - tl.x;
+    const ch = br.y - tl.y;
+
+    ctx.fillStyle = isActive ? 'rgba(233,69,96,0.15)' : cfg.color + '22';
+    ctx.fillRect(tl.x, tl.y, cw, ch);
+    ctx.strokeStyle = isActive ? '#e94560' : cfg.color;
+    ctx.lineWidth = isActive ? 2.5 : 1.5;
+    ctx.setLineDash(isActive ? [] : [4, 3]);
+    ctx.strokeRect(tl.x, tl.y, cw, ch);
+  }
+
+  // Type label
+  const labelText = cfg.label + (region.label ? ': ' + region.label : '');
+  ctx.font = '11px -apple-system, "Microsoft YaHei", sans-serif';
+  ctx.textBaseline = 'top';
+  const tw = ctx.measureText(labelText).width;
+  const lx = tl.x;
+  const ly = tl.y - 20;
+  ctx.fillStyle = '#16213e';
+  const pad = 3;
+  ctx.fillRect(lx - pad, ly - pad, tw + pad * 2, 18 + pad * 2);
+  ctx.fillStyle = cfg.color;
+  ctx.fillText(labelText, lx, ly);
+
+  // Tool indicator
+  const toolIcons = { rect: '[ ]', lasso: '~', ai_click: 'AI', auto_ocr: 'OC' };
+  const toolLabel = toolIcons[region.annotation.tool] || '';
+  if (toolLabel) {
+    ctx.fillStyle = '#888';
+    ctx.font = '10px sans-serif';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(toolLabel, br.x - 14, br.y - 2);
+  }
+  ctx.restore();
+}
+
+function updateZoomIndicator() {
+  if (!state.img) return;
+  const pct = Math.round(state.scale / state.zoomFitScale * 100);
+  zoomIndicator.textContent = pct + '%';
+  zoomIndicator.classList.add('visible');
+}
+
+// ===== Region Management =====
+function addRegion(bbox, polygon, tool) {
+  const region = {
+    id: genId(),
+    user_type: preTypeSelect.value,  // pre-selected type from toolbar
+    label: '',
+    annotation: {
+      tool: tool,
+      bbox: bbox,
+      mask_polygon: polygon,
+      use_mask: tool === 'lasso' || tool === 'ai_click',
+    },
+    created_at: new Date().toISOString(),
+  };
+  state.regions.push(region);
+  state.selectedRegionId = region.id;
+  updateUI();
+  render();
+  return region;
+}
+
+function deleteRegion(id) {
+  state.regions = state.regions.filter(r => r.id !== id);
+  if (state.selectedRegionId === id) {
+    state.selectedRegionId = state.regions.length > 0 ? state.regions[state.regions.length - 1].id : null;
+  }
+  updateUI();
+  render();
+}
+
+function updateRegionType(id, type, label) {
+  const r = state.regions.find(x => x.id === id);
+  if (r) {
+    r.user_type = type;
+    if (label !== undefined) r.label = label;
+    render();
+    updateUI();
+  }
+}
+
+function updateUI() {
+  regionList.innerHTML = '';
+  for (const r of state.regions) {
+    const cfg = TYPE_CONFIG[r.user_type] || TYPE_CONFIG.text_area;
+    const toolNames = { rect: '矩形', lasso: '套索', ai_click: 'AI', auto_ocr: '自动' };
+    const div = document.createElement('div');
+    div.className = 'region-item' + (r.id === state.selectedRegionId ? ' active' : '');
+    div.dataset.id = r.id;
+    div.innerHTML = [
+      '<div class="ri-header">',
+      '<span class="ri-type" style="background:' + cfg.color + '33;color:' + cfg.color + '">' + cfg.label + '</span>',
+      '<span class="ri-label">' + (r.label || r.id) + '</span>',
+      '<button class="ri-del" data-id="' + r.id + '">X</button>',
+      '</div>',
+      '<div class="ri-tool">' + (toolNames[r.annotation.tool] || r.annotation.tool) + ' @ ' + r.annotation.bbox[0].toFixed(0) + ',' + r.annotation.bbox[1].toFixed(0) + ' ' + r.annotation.bbox[2].toFixed(0) + 'x' + r.annotation.bbox[3].toFixed(0) + '</div>',
+    ].join('');
+    div.addEventListener('click', (e) => {
+      if (e.target.closest('.ri-del')) return;
+      state.selectedRegionId = r.id;
+      updateUI();
+      render();
+    });
+    div.querySelector('.ri-del').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteRegion(r.id);
+    });
+    regionList.appendChild(div);
+  }
+  regionCount.textContent = '(' + state.regions.length + ')';
+  exportBtn.disabled = state.regions.length === 0;
+  undoBtn.disabled = state.regions.length === 0;
+  clearBtn.disabled = state.regions.length === 0;
+  viewRegionBtn.disabled = state.selectedRegionId === null || state.regions.length === 0;
+}
+
+// ===== Type Popup (for changing type after drawing) =====
+function showTypePopup(x, y, regionId) {
+  state.pendingRegion = regionId;
+  typePopup.style.display = 'block';
+  const px = Math.min(x, window.innerWidth - 240);
+  const py = Math.min(y, window.innerHeight - 180);
+  typePopup.style.left = px + 'px';
+  typePopup.style.top = py + 'px';
+  document.getElementById('regionLabel').value = '';
+  document.getElementById('regionLabel').focus();
+}
+function hideTypePopup() {
+  typePopup.style.display = 'none';
+  state.pendingRegion = null;
+}
+
+document.getElementById('typeGrid').addEventListener('click', (e) => {
+  const btn = e.target.closest('.tp-btn');
+  if (!btn) return;
+  const type = btn.dataset.type;
+  const label = document.getElementById('regionLabel').value.trim();
+  if (state.pendingRegion) {
+    updateRegionType(state.pendingRegion, type, label);
+  }
+  hideTypePopup();
+});
+document.getElementById('typeConfirm').addEventListener('click', () => {
+  if (state.pendingRegion) {
+    const firstBtn = document.querySelector('#typeGrid .tp-btn');
+    const type = firstBtn ? firstBtn.dataset.type : 'text_area';
+    const label = document.getElementById('regionLabel').value.trim();
+    updateRegionType(state.pendingRegion, type, label);
+  }
+  hideTypePopup();
+});
+document.getElementById('typeCancel').addEventListener('click', () => {
+  if (state.pendingRegion) {
+    deleteRegion(state.pendingRegion);
+  }
+  hideTypePopup();
+});
+
+// ===== Image Loading =====
+function loadImage(file) {
+  if (!file || !file.type.match(/image\/(png|jpeg|webp)/)) {
+    msg('请选择 PNG/JPG/WebP 格式的图片');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      state.img = img;
+      state.imgDataUrl = e.target.result;
+      state.imgW = img.width;
+      state.imgH = img.height;
+      state.regions = [];
+      state.selectedRegionId = null;
+      state.nextId = 1;
+      document.getElementById('canvasWrap').classList.add('has-image');
+      statusSize.textContent = '图片: ' + img.width + ' x ' + img.height;
+      fileInput.value = '';
+      resetView();
+      updateUI();
+      msg('已加载: ' + file.name + ' (' + img.width + 'x' + img.height + ')');
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+fileInput.addEventListener('change', (e) => { if (e.target.files[0]) loadImage(e.target.files[0]); });
+filePickLink.addEventListener('click', (e) => { e.preventDefault(); fileInput.click(); });
+canvasWrap.addEventListener('dragover', (e) => { e.preventDefault(); canvasWrap.style.outline = '2px dashed #e94560'; });
+canvasWrap.addEventListener('dragleave', () => { canvasWrap.style.outline = ''; });
+canvasWrap.addEventListener('drop', (e) => { e.preventDefault(); canvasWrap.style.outline = ''; if (e.dataTransfer.files[0]) loadImage(e.dataTransfer.files[0]); });
+
+// ===== Tool Selection =====
+document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    // If there's a pending region waiting for type popup, ignore tool switch
+    if (state.pendingRegion) return;
+    // Cancel any in-progress drawing first
+    cancelDrawing();
+    document.querySelectorAll('.tool-btn[data-tool]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.currentTool = btn.dataset.tool;
+    canvas.style.cursor = state.currentTool === 'pan' ? 'grab' : 'crosshair';
+  });
+});
+
+function cancelDrawing() {
+  if (state.isDrawing) {
+    state.isDrawing = false;
+    state.rectStart = null;
+    state.rectCurrent = null;
+    state.lassoPoints = [];
+    render();
+  }
+}
+
+// ===== Zoom =====
+document.getElementById('zoomInBtn').addEventListener('click', () => { state.scale *= 1.3; render(); });
+document.getElementById('zoomOutBtn').addEventListener('click', () => { state.scale /= 1.3; render(); });
+document.getElementById('zoomFitBtn').addEventListener('click', resetView);
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  state.scale = clamp(state.scale * delta, 0.05, 50);
+  render();
+});
+
+// ===== Undo / Clear / Focus =====
+document.getElementById('undoBtn').addEventListener('click', () => {
+  if (state.regions.length > 0) {
+    state.regions.pop();
+    state.selectedRegionId = state.regions.length > 0 ? state.regions[state.regions.length - 1].id : null;
+    updateUI();
+    render();
+  }
+});
+document.getElementById('clearBtn').addEventListener('click', () => {
+  if (state.regions.length > 0 && confirm('确定清空所有标注区域？')) {
+    state.regions = [];
+    state.selectedRegionId = null;
+    updateUI();
+    render();
+  }
+});
+document.getElementById('viewRegionBtn').addEventListener('click', () => {
+  if (state.selectedRegionId) focusRegion(state.selectedRegionId);
+});
+
+// ===== Mouse Handlers =====
+canvas.addEventListener('mousedown', (e) => {
+  if (!state.img) return;
+  // Block drawing if type popup is showing
+  if (typePopup.style.display === 'block') return;
+
+  const pos = getCanvasPos(e);
+  const imgPos = canvasToImage(pos.x, pos.y);
+
+  if (state.currentTool === 'pan') {
+    state.panStart = pos;
+    state.panStartOffset = { x: state.offsetX, y: state.offsetY };
+    canvas.style.cursor = 'grabbing';
+    return;
+  }
+
+  if (state.currentTool === 'rect') {
+    state.isDrawing = true;
+    state.rectStart = pos;
+    state.rectCurrent = pos;
+    return;
+  }
+
+  if (state.currentTool === 'lasso') {
+    if (state.isDrawing) {
+      // 第二次点击 → 完成套索
+      finishLasso(e);
+    } else {
+      // 第一次点击 → 开始绘制
+      state.isDrawing = true;
+      state.lassoPoints = [pos];
+    }
+    return;
+  }
+
+  if (state.currentTool === 'ai_click') {
+    if (!state.samAvailable) {
+      msg('SAM 服务未连接，无法使用 AI 分割');
+      return;
+    }
+    doSamSegment(imgPos.x, imgPos.y, pos.x, pos.y);
+    return;
+  }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  const pos = getCanvasPos(e);
+  const imgPos = canvasToImage(pos.x, pos.y);
+  statusCoords.textContent = '鼠标: (' + Math.round(imgPos.x) + ', ' + Math.round(imgPos.y) + ')';
+
+  if (!state.img) return;
+
+  if (state.currentTool === 'pan' && state.panStart) {
+    state.offsetX = state.panStartOffset.x + (pos.x - state.panStart.x);
+    state.offsetY = state.panStartOffset.y + (pos.y - state.panStart.y);
+    render();
+    return;
+  }
+
+  if (state.currentTool === 'rect' && state.isDrawing && state.rectStart) {
+    state.rectCurrent = pos;
+    render();
+    return;
+  }
+
+  if (state.currentTool === 'lasso' && state.isDrawing) {
+    const last = state.lassoPoints[state.lassoPoints.length - 1];
+    if (!last || Math.hypot(pos.x - last.x, pos.y - last.y) > 3) {
+      state.lassoPoints.push(pos);
+      render();
+    }
+    return;
+  }
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  if (!state.img) return;
+
+  if (state.currentTool === 'pan') {
+    state.panStart = null;
+    canvas.style.cursor = 'grab';
+    return;
+  }
+
+  if (state.currentTool === 'rect' && state.isDrawing) {
+    state.isDrawing = false;
+    const start = state.rectStart;
+    const end = state.rectCurrent;
+    if (start && end && (Math.abs(end.x - start.x) > 5 || Math.abs(end.y - start.y) > 5)) {
+      const p1 = canvasToImage(Math.min(start.x, end.x), Math.min(start.y, end.y));
+      const p2 = canvasToImage(Math.max(start.x, end.x), Math.max(start.y, end.y));
+      const bbox = [p1.x, p1.y, p2.x - p1.x, p2.y - p1.y];
+      const region = addRegion(bbox, null, 'rect');
+      showTypePopupForNewRegion(region.id, e.clientX, e.clientY);
+    }
+    state.rectStart = null;
+    state.rectCurrent = null;
+    render();
+    return;
+  }
+
+  if (state.currentTool === 'lasso' && state.isDrawing) {
+    // Lasso: 不再依赖 mouseup，点击切换绘制/完成
+    render();
+    return;
+  }
+});
+
+// ===== Lasso: finish on Enter key =====
+function finishLasso(e) {
+  if (state.lassoPoints.length < 3) {
+    state.isDrawing = false;
+    state.lassoPoints = [];
+    render();
+    return;
+  }
+
+  const simplified = simplifyPolygon(state.lassoPoints, 2);
+  const imgPoints = simplified.map(p => canvasToImage(p.x, p.y));
+  const xs = imgPoints.map(p => p.x);
+  const ys = imgPoints.map(p => p.y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const maxX = Math.max(...xs);
+  const maxY = Math.max(...ys);
+  const bbox = [minX, minY, maxX - minX, maxY - minY];
+  const polygonCoords = imgPoints.map(p => [Math.round(p.x), Math.round(p.y)]);
+  const region = addRegion(bbox, polygonCoords, 'lasso');
+
+  const clientX = e ? e.clientX : (canvasWrap.getBoundingClientRect().left + canvas.width / 2);
+  const clientY = e ? e.clientY : (canvasWrap.getBoundingClientRect().top + canvas.height / 2);
+  showTypePopupForNewRegion(region.id, clientX, clientY);
+
+  state.isDrawing = false;
+  state.lassoPoints = [];
+  render();
+}
+
+function showTypePopupForNewRegion(regionId, clientX, clientY) {
+  const region = state.regions.find(r => r.id === regionId);
+  if (region) {
+    const cx = region.annotation.bbox[0] + region.annotation.bbox[2] / 2;
+    const cy = region.annotation.bbox[1] + region.annotation.bbox[3] / 2;
+    const canvasPos = imageToCanvas(cx, cy);
+    const rect = canvas.getBoundingClientRect();
+    showTypePopup(rect.left + canvasPos.x, rect.top + canvasPos.y, regionId);
+  }
+}
+
+// ===== Polygon simplification (Ramer-Douglas-Peucker) =====
+function simplifyPolygon(points, epsilon) {
+  if (points.length <= 2) return points;
+  let dmax = 0, idx = 0;
+  const first = points[0], last = points[points.length - 1];
+  for (let i = 1; i < points.length - 1; i++) {
+    const d = perpendicularDist(points[i], first, last);
+    if (d > dmax) { idx = i; dmax = d; }
+  }
+  if (dmax > epsilon) {
+    const left = simplifyPolygon(points.slice(0, idx + 1), epsilon);
+    const right = simplifyPolygon(points.slice(idx), epsilon);
+    return left.slice(0, -1).concat(right);
+  }
+  return [first, last];
+}
+function perpendicularDist(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  return Math.abs(dy * p.x - dx * p.y + b.x * a.y - b.y * a.x) / len;
+}
+
+// ===== SAM Service =====
+async function checkSamService() {
+  try {
+    const resp = await fetch(state.samUrl + '/health', { signal: AbortSignal.timeout(2000) });
+    if (resp.ok) {
+      state.samAvailable = true;
+      aiBtn.disabled = false;
+      aiBadge.textContent = '在线';
+      samDot.className = 'dot online';
+      samStatus.textContent = 'SAM 服务: 已连接';
+    }
+  } catch {
+    state.samAvailable = false;
+    aiBtn.disabled = true;
+    aiBadge.textContent = '离线';
+    samDot.className = 'dot offline';
+    samStatus.textContent = 'SAM 服务: 未连接 (启动: python scripts/sam_service.py)';
+  }
+}
+
+async function doSamSegment(imgX, imgY, canvasX, canvasY) {
+  msg('AI 分割中...');
+  try {
+    const resp = await fetch(state.samUrl + '/segment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(15000),
+      body: JSON.stringify({
+        image_path: state.imgDataUrl,
+        click: [Math.round(imgX), Math.round(imgY)],
+      }),
+    });
+    if (!resp.ok) throw new Error('SAM error: ' + resp.status);
+    const data = await resp.json();
+    const polygon = data.polygon;
+    if (!polygon || polygon.length < 3) {
+      msg('AI 分割未检测到有效区域');
+      return;
+    }
+    const xs = polygon.map(p => p[0]);
+    const ys = polygon.map(p => p[1]);
+    const minX = Math.min(...xs), minY = Math.min(...ys);
+    const maxX = Math.max(...xs), maxY = Math.max(...ys);
+    const bbox = [minX, minY, maxX - minX, maxY - minY];
+    const region = addRegion(bbox, polygon, 'ai_click');
+    showTypePopupForNewRegion(region.id, canvasX, canvasY);
+    msg('AI 分割完成');
+  } catch (err) {
+    msg('AI 分割失败: ' + err.message);
+  }
+}
+
+// ===== Export Manifest =====
+document.getElementById('exportBtn').addEventListener('click', () => {
+  if (state.regions.length === 0) { msg('请先标注至少一个区域'); return; }
+
+  const manifest = {
+    manifest_version: '2.0',
+    source_image_w: state.imgW,
+    source_image_h: state.imgH,
+    annotator: { tool: 'image-to-editable-ppt', version: '2.0', output_at: new Date().toISOString() },
+    ai_recognition: document.getElementById('aiToggle').checked,
+    elements: state.regions.map(r => ({
+      id: r.id, user_type: r.user_type, label: r.label, annotation: r.annotation,
+    })),
+  };
+
+  // Export JSON
+  const prefix = String(state.exportCounter).padStart(3, '0');
+  const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'annotation-manifest-' + prefix + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+
+  msg('已导出 #' + prefix + ' (' + state.regions.length + ' 个区域)');
+
+  // Export source image
+  const imgBlob = dataURLToBlob(state.imgDataUrl);
+  const imgUrl = URL.createObjectURL(imgBlob);
+  const imgA = document.createElement('a');
+  imgA.href = imgUrl;
+  imgA.download = 'source-image-' + prefix + '.png';
+  imgA.click();
+  URL.revokeObjectURL(imgUrl);
+
+  state.exportCounter++;
+});
+
+function dataURLToBlob(dataURL) {
+  const parts = dataURL.split(',');
+  const mime = parts[0].match(/:(.*?);/)[1];
+  const bytes = atob(parts[1]);
+  const ab = new ArrayBuffer(bytes.length);
+  const ia = new Uint8Array(ab);
+  for (let i = 0; i < bytes.length; i++) ia[i] = bytes.charCodeAt(i);
+  return new Blob([ab], { type: mime });
+}
+
+// ===== Keyboard shortcuts =====
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+
+  if (typePopup.style.display === 'block') {
+    if (e.key === 'Escape') { hideTypePopup(); return; }
+    return;  // Don't process other shortcuts while popup is open
+  }
+
+  if (e.key === 'r' || e.key === 'R') { document.querySelector('[data-tool="rect"]').click(); e.preventDefault(); }
+  else if (e.key === 'l' || e.key === 'L') { document.querySelector('[data-tool="lasso"]').click(); e.preventDefault(); }
+  else if (e.key === 'a' || e.key === 'A') { if (!aiBtn.disabled) aiBtn.click(); e.preventDefault(); }
+  else if (e.key === 'p' || e.key === 'P') { document.querySelector('[data-tool="pan"]').click(); e.preventDefault(); }
+  else if (e.key === 'z' || e.key === 'Z') { resetView(); e.preventDefault(); }
+  else if (e.key === 'Enter' && state.currentTool === 'lasso' && state.lassoPoints.length > 2) {
+    // Enter to finish lasso
+    finishLasso({ clientX: 0, clientY: 0 });
+    e.preventDefault();
+  }
+  else if (e.key === 'Escape' && state.currentTool === 'lasso' && state.isDrawing) {
+    // Escape 取消套索绘制
+    cancelDrawing();
+    e.preventDefault();
+  }
+  else if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (state.selectedRegionId) { deleteRegion(state.selectedRegionId); e.preventDefault(); }
+  }
+});
+
+// ===== Init =====
+function init() {
+  canvas.width = canvasWrap.clientWidth;
+  canvas.height = canvasWrap.clientHeight - 4;
+  checkSamService();
+  setInterval(checkSamService, 10000);
+  window.addEventListener('resize', () => {
+    canvas.width = canvasWrap.clientWidth;
+    canvas.height = canvasWrap.clientHeight - 4;
+    if (state.img) render();
+  });
+  msg('提示: 先在工具栏选择"类型"，再画选区。按 R/L/A/P 切换工具');
+}
+init();
+</script>
+</body>
+</html>

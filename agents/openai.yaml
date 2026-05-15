@@ -1,0 +1,4 @@
+interface:
+  display_name: "Image to Editable PPT"
+  short_description: "Rebuild image layouts as editable PowerPoint slides."
+  default_prompt: "Use $image-to-editable-ppt to convert the provided images into editable PowerPoint slides, one slide per image, while preserving layout."
